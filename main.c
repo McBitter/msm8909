@@ -1,70 +1,68 @@
 #include "stdio.h"
 #include "stdlib.h"
-#include "libusb.h"
+#include "unistd.h"
+#include "errno.h"
+#include "termios.h"
+#include "fcntl.h"
+#include "string.h"
 
 #define BUFFER_SIZE 4096
 
 int main()
 {
-    libusb_device **devs;
-    libusb_device_handle *handle;
-    libusb_context *ctx;
-    
-    int r = libusb_init(&ctx);
+    char* port = "/dev/ttyUSB0";
+    int fd;
+    int retryCount = 0;
+retry:
 
-    if (r < 0)
+    fd = open(port, O_RDWR | O_NOCTTY | O_SYNC);
+
+    if (fd < 0)
     {
-	libusb_error_name(r);
-	goto cleanup;
+	if (retryCount < 20)
+	{
+	    retryCount++;
+	    sleep(1);
+	    printf("Trying again...\n");
+	    goto retry;
+	}
+	
+	printf("Failed to open serial port %s: %s\n", port, strerror(errno));
+	return -1;
     }
 
-    libusb_set_debug(ctx, 3);
-    ssize_t count = libusb_get_device_list(ctx, &devs);
+    void* recvBuffer = malloc(BUFFER_SIZE);
 
-    if (count < 0)
+    if (recvBuffer == NULL)
     {
-	libusb_error_name(count);
-	goto cleanup;
-    }
-
-    handle = libusb_open_device_with_vid_pid(ctx, 0x05c6, 0x9008);
-
-    if (handle == NULL)
-    {
-	printf("Unable to find DLOAD capable device, sure it\'s bricked enough?\n");
-	goto cleanup;
-    }
-
-    r = libusb_claim_interface(handle, 0);
-
-    if (r < 0)
-    {
-	libusb_error_name(r);
-	goto cleanup;
+	printf("Failed to allocate memory... exiting");
+	close(fd);
+	return -1;
     }
     
-    printf("Start Programming\n");
+    void* sendBuffer = malloc(BUFFER_SIZE);
 
-    int transferred;
-    void *buffer = malloc(BUFFER_SIZE);
-    r = libusb_bulk_transfer(handle, LIBUSB_ENDPOINT_IN, buffer, BUFFER_SIZE, &transferred, 10000);
-
-    if (r < 0)
+    if (sendBuffer == NULL)
     {
-	libusb_error_name(r);
-	goto opened_cleanup;
+	printf("Failed to allocate memory... exiting");
+	close(fd);
+	return -1;
     }
 
-    printf("Bytes transf: %d", transferred);
+    memset(recvBuffer, '0', BUFFER_SIZE);
+    memset(sendBuffer, '0', BUFFER_SIZE);
 
-opened_cleanup:
-    libusb_release_interface(handle, 0);
-    free(buffer);
-cleanup:
-    libusb_free_device_list(devs, 1);
-    libusb_close(handle);
-    libusb_exit(ctx);
-    
+    int bytesRead = read(fd, recvBuffer, BUFFER_SIZE);
+
+    if (bytesRead > 0)
+    {
+	for (int i = 0; i < bytesRead; i++)
+	    printf("%2X ", ((char*)recvBuffer)[i]);
+
+	printf("\n");
+    }
+
+    close(fd);
     return 0;
 }
 
