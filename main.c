@@ -1,12 +1,9 @@
-#include "stdio.h"
 #include "stdlib.h"
 #include "unistd.h"
-#include "errno.h"
-#include "termios.h"
 #include "fcntl.h"
-#include "string.h"
 
-#define BUFFER_SIZE 4096
+#include "utils.h"
+
 
 int main()
 {
@@ -31,7 +28,9 @@ retry:
 	return -1;
     }
 
-    void* recvBuffer = malloc(BUFFER_SIZE);
+    set_serial_attribs(fd, B115200);
+    
+    struct PacketHeader* recvBuffer = malloc(BUFFER_SIZE);
 
     if (recvBuffer == NULL)
     {
@@ -40,28 +39,62 @@ retry:
 	return -1;
     }
     
-    void* sendBuffer = malloc(BUFFER_SIZE);
+    struct PacketHeader* sendBuffer = malloc(BUFFER_SIZE);
 
     if (sendBuffer == NULL)
     {
 	printf("Failed to allocate memory... exiting");
+	free(recvBuffer);
 	close(fd);
 	return -1;
     }
 
-    memset(recvBuffer, '0', BUFFER_SIZE);
-    memset(sendBuffer, '0', BUFFER_SIZE);
+    clearBuffer(recvBuffer);
+    clearBuffer(sendBuffer);
 
-    int bytesRead = read(fd, recvBuffer, BUFFER_SIZE);
+    int bytesRead = 0;
+    int bytesReadtmp = 0;
+    int actualBytes = 0;
 
-    if (bytesRead > 0)
+runner:
+ 
+    bytesRead = read(fd, recvBuffer, 1024); // some kind of limit
+    
+    printf("Bytes from packet field: %d\n", recvBuffer->wholePacketSize);
+    
+    if (bytesRead < actualBytes)
+	printf("Still failed to get all bytes... contiuning still...\n");
+	
+    printf("Bytes read: %d\n", bytesRead);
+
+    // data in little endian
+
+    switch (recvBuffer->command)
     {
-	for (int i = 0; i < bytesRead; i++)
-	    printf("%2X ", ((char*)recvBuffer)[i]);
+    case COMM_CHIP_HELLO:
+    {
+	printBuffer(recvBuffer, bytesRead);
+	printf("Hello recvd\n");
+	answerHello(recvBuffer);
+	int bytesWritten = write(fd, recvBuffer, bytesRead);
 
-	printf("\n");
+	if (bytesWritten > 0)
+	{
+	    printf("Writing to device:\n");
+	    printBuffer(recvBuffer, bytesWritten);
+	}
+	break;
+    }
+    default:
+	printf("Nothing happened...\n");
+	printBuffer(recvBuffer, bytesRead);
+	goto end;
+	break;
     }
 
+    goto runner;
+    
+end:
     close(fd);
     return 0;
 }
