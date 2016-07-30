@@ -47,7 +47,7 @@ void printBuffer(void* bufferToPrint, ssize_t size)
 
 void clearBuffer(void* bufferToClear)
 {
-        memset(bufferToClear, '0', BUFFER_SIZE);
+    memset(bufferToClear, '0', BUFFER_SIZE);
 }
 
 void answerHello(struct PacketHeader *bufferToEdit)
@@ -56,3 +56,4 @@ void answerHello(struct PacketHeader *bufferToEdit)
     // might be some future mode setter...
     *(bufferToEdit->data + 9) = 0x0; // answer packet just resets this
 }
+
