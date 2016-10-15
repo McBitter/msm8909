@@ -10,7 +10,8 @@ int main()
     char* port = "/dev/ttyUSB0";
     
     char* ARMprogrammer = "./MPRG8909.mbn";
-    int progFD;
+    void* programmer = NULL; // have to store all of it in memory
+    FILE* progFile = NULL;
     
     int fd;
     int retryCount = 0;
@@ -34,11 +35,47 @@ retry:
 
     set_serial_attribs(fd, B115200);
 
-    progFD = open(ARMprogrammer, O_RDONLY | O_RSYNC);
+    progFile = fopen(ARMprogrammer, "r");
 
-    if (progFD < 0)
+    if (progFile == NULL)
     {
 	printf("Failed to open file to program... %s: %s\n", ARMprogrammer, strerror(errno));
+	return -1;
+    }
+
+    fseek(progFile, 0, SEEK_END);
+    int programmerSize = ftell(progFile);
+    rewind(progFile);
+
+    if (programmerSize < 0)
+    {
+	printf("Failed to get programmer size...\n");
+	fclose(progFile);
+	close(fd);
+	return -1;
+    }
+
+    programmer = malloc(programmerSize);
+
+    if (programmer == NULL)
+    {
+	printf("Failed to allocate memory... exiting");
+	fclose(progFile);
+	close(fd);
+	return -1;
+    }
+
+    printf("Size of binary: %d\n", programmerSize);
+    
+    int readBytes = fread(programmer, programmerSize, 1, progFile);
+
+    if (readBytes < 0)
+    {
+	printf("Failed to read programmer...\n");
+	strerror(readBytes);
+	free(programmer);
+	fclose(progFile);
+	close(fd);
 	return -1;
     }
     
@@ -75,10 +112,10 @@ runner:
     if (bytesRead < recvBuffer->wholePacketSize)
     {
 	printf("Still failed to get all bytes... trying to get em...\n");
-	int secondRead = read(fd, &recvBuffer->data[INIT_READ], recvBuffer->wholePacketSize - 1024);
+	int secondRead = read(fd, &recvBuffer->data[INIT_READ], recvBuffer->wholePacketSize - INIT_READ);
 
 	if (secondRead <= 0)
-	    printf("Reading failed... report to developer about edge case");
+	    printf("Reading failed... report to developer about edge case\n");
 	else
 	    bytesRead += secondRead;
     }
@@ -111,9 +148,15 @@ runner:
 	    printf("Recv buffer invalid...\n");
 	    goto runner;
 	}
-	
-	int bytesToWrite = read(progFD, sendBuffer, recvBuffer->sizeOfRecvBuffer);
 
+	int bytesToWrite = 0;
+	
+	if (memcpy(sendBuffer, (uint8_t*)programmer + recvBuffer->offsetToProgram,
+		   recvBuffer->sizeOfRecvBuffer) != NULL)
+	{
+	    bytesToWrite = recvBuffer->sizeOfRecvBuffer;
+	}
+	    
 	if (bytesToWrite < 0)
 	{
 	    printf("Failure to prepare data... is file still present?\n");
@@ -126,10 +169,16 @@ runner:
 	}
 	else
 	{
+	    printf("Size of device buffer: %d\n", recvBuffer->sizeOfRecvBuffer);
+	    
 	    int bytesWritten = write(fd, sendBuffer, bytesToWrite);
 
 	    if (bytesWritten > 0)
+	    {
 		printf("Wrote: %d\n", bytesWritten);
+		printBuffer(sendBuffer, 10);
+ 
+	    }
 	    else
 	    {
 		printf("Failed to write to device... aborting...\n");
@@ -138,11 +187,11 @@ runner:
 	}
 	break;
     }
-    case COMM_DONE_DATA:
+    case COMM_LOADER_PARSED:
     {
 	clearBuffer(sendBuffer);
 
-	sendBuffer->command = COMM_DONE_ANSWER;
+	sendBuffer->command = COMM_LOADER_EXECUTE;
 	sendBuffer->wholePacketSize = 8;
 	
 	int bytesWritten = write(fd, sendBuffer, 8);
@@ -158,17 +207,26 @@ runner:
 	    goto end;
 	}
     }
+    case COMM_LOADER_EXECUTE_DONE:
+    {
+	printf("Loader executing on device... output following:\n");
+	// TODO: enter into feedback from programmer loop
+	break;
+    }
     default:
 	printf("Unhandled command recieved...\n");
+	printf("%s", recvBuffer);
 	goto end;
 	break;
     }
+
+    printf("\n------------- SEPARATOR ----------\n\n");
     
     goto runner;
     
 end:
     close(fd);
-    close(progFD);
+    fclose(progFile);
 
     free(sendBuffer);
     free(recvBuffer);

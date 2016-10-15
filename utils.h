@@ -1,5 +1,6 @@
 #ifndef UTILS_H
 #define UTILS_H
+
 #include "stdio.h"
 #include "string.h"
 #include "stdint.h"
@@ -11,19 +12,19 @@
 
 enum
 {
-    COMM_CHIP_HELLO  = 0x01,
-    COMM_ANSW_HELLO  = 0x02,
+    COMM_CHIP_HELLO          = 0x01,
+    COMM_ANSW_HELLO          = 0x02,
     
-    COMM_READ_DATA   = 0x03,
-    COMM_READ_DATA64 = 0x12, // unused
+    COMM_READ_DATA           = 0x03,
+    COMM_READ_DATA64         = 0x12, // unused
 
-    COMM_WRITE_DATA  = 0x04,
+    COMM_LOADER_PARSED       = 0x04,
 
-    COMM_DONE_DATA   = 0x05,
-    COMM_DONE_ANSWER = 0x06,
+    COMM_LOADER_EXECUTE      = 0x05,
+    COMM_LOADER_EXECUTE_DONE = 0x06,
     
-    COMM_MEM_DEBUG64 = 0x10, // unused
-    COMM_MEM_DEBUG   = 0x09, // unused
+    COMM_MEM_DEBUG64         = 0x10, // unused
+    COMM_MEM_DEBUG           = 0x09, // unused
 };
 
 struct PacketHeader
